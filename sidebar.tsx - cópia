@@ -1,0 +1,686 @@
+import {
+  DEFAULT_LAYER,
+  DEFAULT_SOURCE,
+  LAYER_ROLES,
+  LAYER_ROLE_LABELS,
+  PRESETS,
+  SHAPES,
+  newId,
+  type Layer,
+  type LayerRole,
+  type Modifier,
+  type ModifierType,
+  type MotionOp,
+  type MotionOpType,
+  type Source,
+  type SourceKind,
+} from "@/lib/solum/schema";
+import { derivedLight, describeCause, layerInfluence, sourceThroughLayers, whatIfLayer } from "@/lib/solum/simulate";
+import { runCommand, suggestFromPhrase } from "@/lib/solum/commands";
+import { useSolum } from "@/store/solum-store";
+import { Button } from "@/components/ui/button";
+import { ControlRow, FieldCard, MiniNum, Pill, Section } from "./controls";
+import { useMemo, useState } from "react";
+
+export function Sidebar() {
+  const doc = useSolum((s) => s.doc);
+  const patch = useSolum((s) => s.patch);
+  const status = useSolum((s) => s.status);
+  const statusKind = useSolum((s) => s.statusKind);
+  const [hint, setHint] = useState("");
+  const suggestions = useMemo(() => suggestFromPhrase(hint), [hint]);
+  const light = derivedLight(doc);
+
+  const sel = doc.selected;
+
+  return (
+    <aside className="solum-scroll h-full min-w-0 overflow-auto border-r border-line bg-panel px-3.5 pb-10 pt-3.5 max-md:h-auto max-md:border-r-0 max-md:border-b">
+      <div className="mb-1.5 flex items-end justify-between gap-2">
+        <div>
+          <h1 className="font-display text-2xl font-semibold tracking-tight">Solum</h1>
+          <small className="text-muted">Structural Field Builder</small>
+        </div>
+        <Pill>
+          {sel.kind === "object" ? "Objeto" : sel.kind === "layer" ? "Camada" : sel.kind === "source" ? "Fonte" : sel.kind}
+        </Pill>
+      </div>
+      <p className="mb-3.5 text-xs text-muted">
+        Construa a anatomia antes do efeito. Cada propriedade tem dono, campo, unidade e destino. Nada vai para o Houdini até você pedir.
+      </p>
+
+      <Section title="01 · Objeto" open>
+        <label className="mb-2 block text-xs text-muted">
+          Nome do objeto
+          <input
+            value={doc.meta.name}
+            onChange={(e) => patch((s) => { s.meta.name = e.target.value; }, "Nome alterado")}
+            className="mt-1 h-8 w-full rounded-sm border border-line bg-panel-2 px-2 text-fg outline-none focus:border-accent"
+          />
+        </label>
+        <label className="mb-2 block text-xs text-muted">
+          Forma
+          <select
+            value={doc.object.shape}
+            onChange={(e) => patch((s) => { s.object.shape = Number(e.target.value); }, "Forma externa alterada")}
+            className="mt-1 h-8 w-full rounded-sm border border-line bg-panel-2 px-2 text-fg"
+          >
+            {SHAPES.map((n, i) => (
+              <option key={n} value={i}>{n}</option>
+            ))}
+          </select>
+        </label>
+        <ControlRow title="Escala global" hint="unidade relativa" value={doc.object.scale} min={0.2} max={3} step={0.01} onChange={(v) => patch((s) => { s.object.scale = v; }, "object.scale")} />
+        <ControlRow title="Escala X" hint="multiplicador" value={doc.object.scaleX} min={0.3} max={2} step={0.01} onChange={(v) => patch((s) => { s.object.scaleX = v; })} />
+        <ControlRow title="Escala Y" hint="multiplicador" value={doc.object.scaleY} min={0.3} max={2} step={0.01} onChange={(v) => patch((s) => { s.object.scaleY = v; })} />
+        <ControlRow title="Escala Z" hint="multiplicador" value={doc.object.scaleZ} min={0.3} max={2} step={0.01} onChange={(v) => patch((s) => { s.object.scaleZ = v; })} />
+        <ControlRow title="Rotação X" hint="orientação" value={doc.object.rotX} min={-180} max={180} step={1} onChange={(v) => patch((s) => { s.object.rotX = v; })} />
+        <ControlRow title="Rotação Y" hint="orientação" value={doc.object.rotY} min={-180} max={180} step={1} onChange={(v) => patch((s) => { s.object.rotY = v; })} />
+        <ControlRow title="Rotação Z" hint="orientação" value={doc.object.rotZ} min={-180} max={180} step={1} onChange={(v) => patch((s) => { s.object.rotZ = v; })} />
+      </Section>
+
+      <Section title="02 · Superfície e microestrutura" open>
+        <ControlRow title="Irregularidade macro" hint="deformação" value={doc.surface.irregularity} min={0} max={1.5} step={0.01} onChange={(v) => patch((s) => { s.surface.irregularity = v; })} />
+        <ControlRow title="Largura da casca" hint="espessura estrutural" value={doc.surface.shellWidth} min={0.05} max={1} step={0.01} onChange={(v) => patch((s) => { s.surface.shellWidth = v; })} />
+        <ControlRow title="Warp macro" hint="deformação" value={doc.surface.macroNoise} min={0} max={1.5} step={0.01} onChange={(v) => patch((s) => { s.surface.macroNoise = v; })} />
+        <ControlRow title="Escala macro" hint="escala" value={doc.surface.macroFreq} min={0.3} max={8} step={0.01} onChange={(v) => patch((s) => { s.surface.macroFreq = v; })} />
+        <ControlRow title="Dureza da borda" hint="transição" value={doc.surface.edge} min={0.01} max={0.5} step={0.01} onChange={(v) => patch((s) => { s.surface.edge = v; })} />
+        <ControlRow title="Micro-relevo" hint="amplitude" value={doc.surface.detail} min={0} max={2} step={0.01} onChange={(v) => patch((s) => { s.surface.detail = v; })} />
+        <ControlRow title="Freq. micro" hint="escala" value={doc.surface.detailFreq} min={2} max={24} step={0.1} onChange={(v) => patch((s) => { s.surface.detailFreq = v; })} />
+        <ControlRow title="Nitidez micro" hint="perfil" value={doc.surface.detailSharp} min={1} max={12} step={0.1} onChange={(v) => patch((s) => { s.surface.detailSharp = v; })} />
+        <ControlRow title="Cavidades" hint="quantidade" value={doc.surface.cavities} min={0} max={1} step={0.01} onChange={(v) => patch((s) => { s.surface.cavities = v; })} />
+        <ControlRow title="Freq. cavidade" hint="escala" value={doc.surface.cavityFreq} min={0.5} max={12} step={0.01} onChange={(v) => patch((s) => { s.surface.cavityFreq = v; })} />
+        <ControlRow title="Profundidade cavidade" hint="profundidade" value={doc.surface.cavityDepth} min={0} max={1} step={0.01} onChange={(v) => patch((s) => { s.surface.cavityDepth = v; })} />
+        <ControlRow title="Porosidade" hint="vazios" value={doc.surface.porosity} min={0} max={1} step={0.01} onChange={(v) => patch((s) => { s.surface.porosity = v; })} />
+        <ControlRow title="Erosão" hint="perda de casca" value={doc.surface.erosion} min={0} max={1} step={0.01} onChange={(v) => patch((s) => { s.surface.erosion = v; })} />
+        <ControlRow title="Rugas" hint="micro dobra" value={doc.surface.wrinkles} min={0} max={1.5} step={0.01} onChange={(v) => patch((s) => { s.surface.wrinkles = v; })} />
+        <ControlRow title="Filamentos" hint="veios de emissão" value={doc.surface.filaments} min={0} max={1.5} step={0.01} onChange={(v) => patch((s) => { s.surface.filaments = v; })} />
+        <ControlRow title="Escala filamento" hint="frequência" value={doc.surface.filamentScale} min={1} max={12} step={0.1} onChange={(v) => patch((s) => { s.surface.filamentScale = v; })} />
+        <ControlRow title="Massas" hint="bolsões densos" value={doc.surface.masses} min={0} max={1.5} step={0.01} onChange={(v) => patch((s) => { s.surface.masses = v; })} />
+        <ControlRow title="Escala massa" hint="frequência" value={doc.surface.massScale} min={0.5} max={8} step={0.1} onChange={(v) => patch((s) => { s.surface.massScale = v; })} />
+      </Section>
+
+      <Section title="03 · Campos físicos" open>
+        <ControlRow title="Densidade base" hint="campo density" value={doc.volume.density} min={0.1} max={40} step={0.1} onChange={(v) => patch((s) => { s.volume.density = v; })} />
+        <ControlRow title="Contraste" hint="variação" value={doc.volume.densityContrast} min={0} max={3} step={0.01} onChange={(v) => patch((s) => { s.volume.densityContrast = v; })} />
+        <ControlRow title="Falloff radial" hint="distribuição" value={doc.volume.radialFalloff} min={0} max={1} step={0.01} onChange={(v) => patch((s) => { s.volume.radialFalloff = v; })} />
+        <ControlRow title="Temperatura" hint="campo temperature" value={doc.volume.temperatureGain} min={0} max={10} step={0.01} onChange={(v) => patch((s) => { s.volume.temperatureGain = v; })} />
+        <ControlRow title="Emissão" hint="campo emission" value={doc.volume.emissionGain} min={0} max={10} step={0.01} onChange={(v) => patch((s) => { s.volume.emissionGain = v; })} />
+        <ControlRow title="Absorção" hint="campo absorption" value={doc.volume.absorptionGain} min={0} max={5} step={0.01} onChange={(v) => patch((s) => { s.volume.absorptionGain = v; })} />
+        <ControlRow title="Scattering" hint="campo scattering" value={doc.volume.scatteringGain} min={0} max={5} step={0.01} onChange={(v) => patch((s) => { s.volume.scatteringGain = v; })} />
+        <ControlRow title="Escala velocity" hint="campo velocity" value={doc.volume.velocityScale} min={0} max={5} step={0.01} onChange={(v) => patch((s) => { s.volume.velocityScale = v; })} />
+        <ControlRow title="Pressão" hint="campo pressure" value={doc.volume.pressureGain} min={0} max={5} step={0.01} onChange={(v) => patch((s) => { s.volume.pressureGain = v; })} />
+      </Section>
+
+      <Section title="04 · Luz / integração" open={false}>
+        <ControlRow title="Força fonte" hint="luz externa" value={doc.light.keyStrength} min={0} max={5} step={0.01} onChange={(v) => patch((s) => { s.light.keyStrength = v; })} />
+        <ControlRow title="Transmissão ambiente" hint="ambiente" value={doc.light.backgroundTransmission} min={0} max={1} step={0.01} onChange={(v) => patch((s) => { s.light.backgroundTransmission = v; })} />
+        <ControlRow title="Passos diagnóstico" hint="integração visual" value={doc.light.raySteps} min={16} max={256} step={8} onChange={(v) => patch((s) => { s.light.raySteps = v; })} />
+        <p className="mt-2 text-[11px] text-muted">Transmissão acumulada atual: {(light.out * 100).toFixed(1)}%. Este número é o modelo de um raio — não o Karma.</p>
+        <label className="mt-2 block text-xs text-muted">
+          Material Houdini
+          <input
+            value={doc.materialPath}
+            onChange={(e) => patch((s) => { s.materialPath = e.target.value; }, "Caminho de material")}
+            className="mt-1 h-8 w-full rounded-sm border border-line bg-panel-2 px-2 font-mono text-[11px] text-fg outline-none focus:border-accent"
+          />
+        </label>
+      </Section>
+
+      <Section title="05 · Fontes (núcleos)" open>
+        <SourcesEditor />
+      </Section>
+
+      <Section title="06 · Camadas internas" open>
+        <LayersEditor />
+      </Section>
+
+      <Section title="07 · Modificadores" open={false}>
+        <ModifiersEditor />
+      </Section>
+
+      <Section title="08 · Atmosfera" open={false}>
+        <ControlRow title="Halo" hint="extensão externa" value={doc.atmosphere.halo} min={0} max={2} step={0.01} onChange={(v) => patch((s) => { s.atmosphere.halo = v; })} />
+        <ControlRow title="Tamanho halo" hint="raio relativo" value={doc.atmosphere.haloSize} min={0.2} max={3} step={0.01} onChange={(v) => patch((s) => { s.atmosphere.haloSize = v; })} />
+        <ControlRow title="Pontos" hint="quantidade" value={doc.atmosphere.dust} min={0} max={60000} step={500} onChange={(v) => patch((s) => { s.atmosphere.dust = v; })} />
+        <ControlRow title="Tamanho ponto" hint="pscale" value={doc.atmosphere.dustSize} min={0.002} max={0.05} step={0.001} onChange={(v) => patch((s) => { s.atmosphere.dustSize = v; })} />
+        <ControlRow title="Particulado" hint="mistura" value={doc.atmosphere.particulate} min={0} max={1} step={0.01} onChange={(v) => patch((s) => { s.atmosphere.particulate = v; })} />
+        <ControlRow title="Fumaça" hint="envelope" value={doc.atmosphere.smoke} min={0} max={1} step={0.01} onChange={(v) => patch((s) => { s.atmosphere.smoke = v; })} />
+        <ControlRow title="Fragmentos" hint="detritos" value={doc.atmosphere.fragments} min={0} max={1} step={0.01} onChange={(v) => patch((s) => { s.atmosphere.fragments = v; })} />
+      </Section>
+
+      <Section title="09 · Motion sobre a estrutura" open={false}>
+        <ControlRow title="Duração" hint="tempo total s" value={doc.motion.duration} min={0.5} max={60} step={0.1} onChange={(v) => patch((s) => { s.motion.duration = v; })} />
+        <ControlRow title="FPS" hint="quadros/s" value={doc.motion.fps} min={12} max={60} step={1} onChange={(v) => patch((s) => { s.motion.fps = v; })} />
+        <ControlRow title="Loop" hint="1 = emenda" value={doc.motion.loop} min={0} max={1} step={1} onChange={(v) => patch((s) => { s.motion.loop = v; })} />
+        <ControlRow title="Velocidade" hint="transporte" value={doc.motion.speed} min={0} max={5} step={0.01} onChange={(v) => patch((s) => { s.motion.speed = v; })} />
+        <ControlRow title="Raio de fluxo" hint="órbita do ruído" value={doc.motion.flow} min={0} max={3} step={0.01} onChange={(v) => patch((s) => { s.motion.flow = v; })} />
+        <ControlRow title="Pulsação" hint="variação" value={doc.motion.pulse} min={0} max={2} step={0.01} onChange={(v) => patch((s) => { s.motion.pulse = v; })} />
+        <ControlRow title="Spin" hint="turn/s" value={doc.motion.spin} min={-3} max={3} step={0.01} onChange={(v) => patch((s) => { s.motion.spin = v; })} />
+        <ControlRow title="Expansão" hint="crescimento" value={doc.motion.expansion} min={0} max={5} step={0.01} onChange={(v) => patch((s) => { s.motion.expansion = v; })} />
+        <ControlRow title="Turbulência" hint="instabilidade" value={doc.motion.turbulence} min={0} max={3} step={0.01} onChange={(v) => patch((s) => { s.motion.turbulence = v; })} />
+        <ControlRow title="Seed" hint="determinismo" value={doc.meta.seed} min={0} max={99999} step={1} onChange={(v) => patch((s) => { s.meta.seed = v; })} />
+        <OperatorsEditor />
+      </Section>
+
+      <Section title="10 · Paleta explícita" open={false}>
+        <div className="grid grid-cols-2 gap-2">
+          {(
+            [
+              ["background", "Partes finas / lava"],
+              ["foreground", "Casca / partes grossas"],
+              ["core", "Núcleo"],
+              ["absorption", "Cor absorvida"],
+              ["scatter", "Scattering"],
+            ] as const
+          ).map(([k, l]) => (
+            <label key={k} className="flex items-center gap-2 text-xs">
+              <input
+                type="color"
+                value={doc.colors[k]}
+                onChange={(e) => patch((s) => { s.colors[k] = e.target.value; }, "Cor " + l)}
+                className="h-7 w-9 cursor-pointer rounded-sm border border-line bg-transparent p-0.5"
+              />
+              {l}
+            </label>
+          ))}
+        </div>
+      </Section>
+
+      <Section title="11 · Presets estruturais" open={false}>
+        <div className="flex flex-wrap gap-1.5">
+          {Object.keys(PRESETS).map((k) => (
+            <Button key={k} size="sm" onClick={() => useSolum.getState().loadPreset(k)}>
+              {k}
+            </Button>
+          ))}
+        </div>
+      </Section>
+
+      <Section title="12 · Árvore e inspeção" open>
+        <div className="mb-2 rounded-md border border-line bg-bg p-2 font-mono text-[11px] leading-relaxed">
+          <div><b className="text-fg">OBJECT</b> <span className="text-muted">{SHAPES[doc.object.shape]}</span></div>
+          <div>├─ SURFACE <span className="text-muted">{doc.layers.length} camadas</span></div>
+          <div>├─ VOLUME <span className="text-muted">density + temp + emission + pressure</span></div>
+          <div>├─ SOURCES <span className="text-muted">{doc.sources.length} fontes</span></div>
+          <div>├─ MODIFIERS <span className="text-muted">{doc.modifiers.filter((m) => m.enabled).length} ativos</span></div>
+          <div>├─ ATMOSPHERE <span className="text-muted">{Math.round(doc.atmosphere.dust)} pts</span></div>
+          <div>└─ MOTION <span className="text-muted">{doc.motion.duration.toFixed(1)}s @ {doc.motion.fps} fps · {doc.operators.length} ops</span></div>
+        </div>
+        <Inspector />
+        <ControlRow title="Plano do cutaway" hint="posição do corte" value={doc.view.cut} min={0.05} max={0.95} step={0.01} onChange={(v) => patch((s) => { s.view.cut = v; })} />
+      </Section>
+
+      <div className="sticky bottom-0 mt-3 bg-bg pt-2">
+        <input
+          value={hint}
+          onChange={(e) => setHint(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter") return;
+            const raw = hint;
+            setHint("");
+            const store = useSolum.getState();
+            store.patch((s) => {
+              const msg = runCommand(s, raw);
+              if (msg === "__play__") store.setPlaying(true);
+              else if (msg === "__pause__") store.setPlaying(false);
+              else store.setStatus(msg);
+            });
+          }}
+          placeholder="comando: set density 8 | layer add | view cutaway | op add explosion"
+          className="h-9 w-full rounded-md border border-line bg-panel-2 px-2.5 text-xs text-fg outline-none focus:border-accent"
+        />
+        {suggestions.length ? (
+          <p className="mt-1 text-[11px] text-muted">
+            Você provavelmente quer alterar: {suggestions.join(" · ")}. Você decide.
+          </p>
+        ) : null}
+        <p className={`mt-1 min-h-4 text-[11px] ${statusKind === "good" ? "text-good" : statusKind === "warn" ? "text-warn" : "text-muted"}`}>
+          {status}
+        </p>
+      </div>
+    </aside>
+  );
+}
+
+function LayersEditor() {
+  const doc = useSolum((s) => s.doc);
+  const patch = useSolum((s) => s.patch);
+  return (
+    <div>
+      <div className="mb-1.5 flex items-center justify-between">
+        <span className="text-sm font-medium">Camadas</span>
+        <Button
+          size="sm"
+          onClick={() =>
+            patch((s) => {
+              const last = s.layers.at(-1);
+              const layer = DEFAULT_LAYER({
+                id: newId("l"),
+                name: `L${s.layers.length + 1} · nova`,
+                radius: Math.max(0.12, (last?.radius ?? 1) - 0.22),
+                thickness: 0.2,
+                density: 0.6,
+              });
+              s.layers.push(layer);
+              s.selected = { kind: "layer", id: layer.id };
+            }, "Camada adicionada")
+          }
+        >
+          + camada
+        </Button>
+      </div>
+      {doc.layers.map((l, i) => (
+        <LayerCard key={l.id} layer={l} index={i} />
+      ))}
+    </div>
+  );
+}
+
+function LayerCard({ layer: l, index: i }: { layer: Layer; index: number }) {
+  const sel = useSolum((s) => s.doc.selected);
+  const patch = useSolum((s) => s.patch);
+  const selected = sel.kind === "layer" && sel.id === l.id;
+  const set = (fn: (x: Layer) => void, msg?: string) =>
+    patch((s) => {
+      const x = s.layers.find((n) => n.id === l.id);
+      if (x) fn(x);
+    }, msg);
+  return (
+    <FieldCard selected={selected} onClick={() => patch((s) => { s.selected = { kind: "layer", id: l.id }; })}>
+      <div className="flex items-center justify-between gap-2">
+        <strong className="text-xs">{l.name}</strong>
+        <small className="text-muted">r {l.radius.toFixed(2)} · t {l.thickness.toFixed(2)}</small>
+        <Button
+          size="sm"
+          variant="danger"
+          onClick={(e) => {
+            e.stopPropagation();
+            patch((s) => {
+              s.layers = s.layers.filter((n) => n.id !== l.id);
+              s.selected = { kind: "object", id: "" };
+            }, "Camada removida");
+          }}
+        >
+          ×
+        </Button>
+      </div>
+      <input
+        value={l.name}
+        onChange={(e) => set((x) => { x.name = e.target.value; })}
+        className="mt-1.5 h-7 w-full rounded-sm border border-line bg-bg px-1.5 text-xs"
+      />
+      <div className="mt-1.5 grid grid-cols-4 gap-1.5">
+        <MiniNum label="raio" value={l.radius} onChange={(v) => set((x) => { x.radius = v; })} />
+        <MiniNum label="esp" value={l.thickness} onChange={(v) => set((x) => { x.thickness = v; })} />
+        <MiniNum label="dens" value={l.density} onChange={(v) => set((x) => { x.density = v; })} />
+        <MiniNum label="temp" value={l.temperature} onChange={(v) => set((x) => { x.temperature = v; })} />
+        <MiniNum label="emit" value={l.emission} onChange={(v) => set((x) => { x.emission = v; })} />
+        <MiniNum label="abs" value={l.absorption} onChange={(v) => set((x) => { x.absorption = v; })} />
+        <MiniNum label="scat" value={l.scattering} onChange={(v) => set((x) => { x.scattering = v; })} />
+        <MiniNum label="transm" value={l.transmission} onChange={(v) => set((x) => { x.transmission = v; })} />
+      </div>
+      <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+        <select
+          value={l.role}
+          onChange={(e) => set((x) => { x.role = e.target.value as LayerRole; }, `Papel L${i + 1}`)}
+          className="h-7 w-full rounded-sm border border-line bg-bg px-1 text-xs"
+        >
+          {LAYER_ROLES.map((r) => (
+            <option key={r} value={r}>{LAYER_ROLE_LABELS[r]}</option>
+          ))}
+        </select>
+        <select
+          value={l.shape}
+          onChange={(e) => set((x) => { x.shape = Number(e.target.value); }, `Forma L${i + 1}`)}
+          className="h-7 w-full rounded-sm border border-line bg-bg px-1 text-xs"
+        >
+          {SHAPES.map((n, j) => (
+            <option key={n} value={j}>{n}</option>
+          ))}
+        </select>
+      </div>
+      <label className="mt-1.5 flex items-center gap-2 text-[10px] text-muted">
+        tinta da camada
+        <input
+          type="color"
+          value={l.tint || "#c45a28"}
+          onChange={(e) => set((x) => { x.tint = e.target.value; })}
+          className="h-7 w-9 cursor-pointer rounded-sm border border-line bg-transparent p-0.5"
+        />
+      </label>
+    </FieldCard>
+  );
+}
+
+function SourcesEditor() {
+  const doc = useSolum((s) => s.doc);
+  const patch = useSolum((s) => s.patch);
+  return (
+    <div>
+      <div className="mb-1.5 flex items-center justify-between">
+        <span className="text-sm font-medium">Núcleos / fontes</span>
+        <Button
+          size="sm"
+          onClick={() =>
+            patch((s) => {
+              const src = DEFAULT_SOURCE({
+                id: newId("c"),
+                name: `CORE ${s.sources.length + 1}`,
+                kind: s.sources.length ? "subcore" : "core",
+                radius: 0.22,
+                x: 0.18 * s.sources.length,
+              });
+              s.sources.push(src);
+              s.selected = { kind: "source", id: src.id };
+            }, "Fonte adicionada")
+          }
+        >
+          + fonte
+        </Button>
+      </div>
+      {doc.sources.map((c) => (
+        <SourceCard key={c.id} source={c} />
+      ))}
+    </div>
+  );
+}
+
+function SourceCard({ source: c }: { source: Source }) {
+  const sel = useSolum((s) => s.doc.selected);
+  const patch = useSolum((s) => s.patch);
+  const selected = sel.kind === "source" && sel.id === c.id;
+  const set = (fn: (x: Source) => void) =>
+    patch((s) => {
+      const x = s.sources.find((n) => n.id === c.id);
+      if (x) fn(x);
+    });
+  return (
+    <FieldCard selected={selected} onClick={() => patch((s) => { s.selected = { kind: "source", id: c.id }; })}>
+      <div className="flex items-center justify-between gap-2">
+        <strong className="text-xs">{c.name}</strong>
+        <small className="text-muted">{c.kind} · r {c.radius.toFixed(2)} · T {c.temperature.toFixed(1)}</small>
+        <Button
+          size="sm"
+          variant="danger"
+          onClick={(e) => {
+            e.stopPropagation();
+            patch((s) => {
+              s.sources = s.sources.filter((n) => n.id !== c.id);
+              s.selected = { kind: "object", id: "" };
+            });
+          }}
+        >
+          ×
+        </Button>
+      </div>
+      <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+        <input value={c.name} onChange={(e) => set((x) => { x.name = e.target.value; })} className="h-7 rounded-sm border border-line bg-bg px-1.5 text-xs" />
+        <select value={c.kind} onChange={(e) => set((x) => { x.kind = e.target.value as SourceKind; })} className="h-7 rounded-sm border border-line bg-bg px-1 text-xs">
+          <option value="core">núcleo</option>
+          <option value="subcore">subnúcleo</option>
+          <option value="localized">emissão local</option>
+          <option value="external">fonte externa</option>
+        </select>
+      </div>
+      <div className="mt-1.5 grid grid-cols-4 gap-1.5">
+        <MiniNum label="x" value={c.x} onChange={(v) => set((x) => { x.x = v; })} />
+        <MiniNum label="y" value={c.y} onChange={(v) => set((x) => { x.y = v; })} />
+        <MiniNum label="z" value={c.z} onChange={(v) => set((x) => { x.z = v; })} />
+        <MiniNum label="raio" value={c.radius} onChange={(v) => set((x) => { x.radius = v; })} />
+        <MiniNum label="temp" value={c.temperature} onChange={(v) => set((x) => { x.temperature = v; })} />
+        <MiniNum label="emit" value={c.emission} onChange={(v) => set((x) => { x.emission = v; })} />
+        <MiniNum label="abs" value={c.absorption} onChange={(v) => set((x) => { x.absorption = v; })} />
+        <MiniNum label="falloff" value={c.falloff} onChange={(v) => set((x) => { x.falloff = v; })} />
+        <MiniNum label="alcance" value={c.reach} onChange={(v) => set((x) => { x.reach = v; })} />
+        <MiniNum label="scat" value={c.scattering} onChange={(v) => set((x) => { x.scattering = v; })} />
+        <MiniNum label="pulse" value={c.pulse} onChange={(v) => set((x) => { x.pulse = v; })} />
+        <MiniNum label="dir X" value={c.dirX} onChange={(v) => set((x) => { x.dirX = v; })} />
+        <MiniNum label="dir Y" value={c.dirY} onChange={(v) => set((x) => { x.dirY = v; })} />
+        <MiniNum label="dir Z" value={c.dirZ} onChange={(v) => set((x) => { x.dirZ = v; })} />
+        <MiniNum label="cone" value={c.cone} onChange={(v) => set((x) => { x.cone = v; })} />
+      </div>
+      <label className="mt-1.5 flex items-center gap-2 text-[10px] text-muted">
+        cor da emissão
+        <input
+          type="color"
+          value={c.color || "#ff5c14"}
+          onChange={(e) => set((x) => { x.color = e.target.value; })}
+          className="h-7 w-9 cursor-pointer rounded-sm border border-line bg-transparent p-0.5"
+        />
+        <span className="font-mono">{c.color}</span>
+      </label>
+    </FieldCard>
+  );
+}
+
+function ModifiersEditor() {
+  const doc = useSolum((s) => s.doc);
+  const patch = useSolum((s) => s.patch);
+  const types: ModifierType[] = ["noise", "erosion", "turbulence", "displacement", "flow", "growth"];
+  return (
+    <div>
+      <div className="mb-1.5 flex items-center justify-between">
+        <span className="text-sm font-medium">Modificadores</span>
+        <Button
+          size="sm"
+          onClick={() =>
+            patch((s) => {
+              const m: Modifier = {
+                id: newId("m"),
+                name: "Novo",
+                type: "noise",
+                target: "surface",
+                amount: 0.4,
+                frequency: 3,
+                seed: 11,
+                enabled: true,
+              };
+              s.modifiers.push(m);
+              s.selected = { kind: "modifier", id: m.id };
+            })
+          }
+        >
+          + mod
+        </Button>
+      </div>
+      {doc.modifiers.map((m) => (
+        <FieldCard
+          key={m.id}
+          selected={doc.selected.kind === "modifier" && doc.selected.id === m.id}
+          onClick={() => patch((s) => { s.selected = { kind: "modifier", id: m.id }; })}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <strong className="text-xs">{m.name}</strong>
+            <label className="text-[10px] text-muted">
+              <input
+                type="checkbox"
+                checked={m.enabled}
+                onChange={(e) =>
+                  patch((s) => {
+                    const x = s.modifiers.find((n) => n.id === m.id);
+                    if (x) x.enabled = e.target.checked;
+                  })
+                }
+              />{" "}
+              on
+            </label>
+            <Button size="sm" variant="danger" onClick={() => patch((s) => { s.modifiers = s.modifiers.filter((n) => n.id !== m.id); })}>×</Button>
+          </div>
+          <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+            <select
+              value={m.type}
+              onChange={(e) =>
+                patch((s) => {
+                  const x = s.modifiers.find((n) => n.id === m.id);
+                  if (x) x.type = e.target.value as ModifierType;
+                })
+              }
+              className="h-7 rounded-sm border border-line bg-bg px-1 text-xs"
+            >
+              {types.map((t) => <option key={t}>{t}</option>)}
+            </select>
+            <input
+              value={m.target}
+              onChange={(e) =>
+                patch((s) => {
+                  const x = s.modifiers.find((n) => n.id === m.id);
+                  if (x) x.target = e.target.value;
+                })
+              }
+              className="h-7 rounded-sm border border-line bg-bg px-1.5 font-mono text-[11px]"
+            />
+          </div>
+          <div className="mt-1.5 grid grid-cols-3 gap-1.5">
+            <MiniNum label="qtd" value={m.amount} onChange={(v) => patch((s) => { const x = s.modifiers.find((n) => n.id === m.id); if (x) x.amount = v; })} />
+            <MiniNum label="freq" value={m.frequency} onChange={(v) => patch((s) => { const x = s.modifiers.find((n) => n.id === m.id); if (x) x.frequency = v; })} />
+            <MiniNum label="seed" value={m.seed} step={1} onChange={(v) => patch((s) => { const x = s.modifiers.find((n) => n.id === m.id); if (x) x.seed = v; })} />
+          </div>
+        </FieldCard>
+      ))}
+    </div>
+  );
+}
+
+function OperatorsEditor() {
+  const doc = useSolum((s) => s.doc);
+  const patch = useSolum((s) => s.patch);
+  const types: MotionOpType[] = ["flow", "expansion", "explosion", "collision", "fragmentation", "growth"];
+  return (
+    <div className="mt-3">
+      <div className="mb-1.5 flex items-center justify-between">
+        <span className="text-sm font-medium">Operadores (agem na estrutura)</span>
+        <Button
+          size="sm"
+          onClick={() =>
+            patch((s) => {
+              const op: MotionOp = {
+                id: newId("op"),
+                name: "Explosão",
+                type: "explosion",
+                enabled: true,
+                sourceId: s.sources[0]?.id ?? "",
+                pressure: 4.2,
+                dirX: 0,
+                dirY: 0,
+                dirZ: 0,
+                expansion: 2.8,
+                temperatureDelta: 3.4,
+                erosion: 0.6,
+                fragmentation: 0.2,
+                particles: 12000,
+                start: 0,
+                length: 1,
+              };
+              s.operators.push(op);
+              s.selected = { kind: "operator", id: op.id };
+            }, "Operador explosão")
+          }
+        >
+          + explosão
+        </Button>
+      </div>
+      {doc.operators.length === 0 ? (
+        <p className="text-[11px] text-muted">Nenhum operador. Motion de base (fluxo, pulso, spin) já atua sobre o objeto. Operadores descrevem eventos: explosão, colisão, fragmentação.</p>
+      ) : null}
+      {doc.operators.map((op) => (
+        <FieldCard key={op.id} selected={doc.selected.kind === "operator" && doc.selected.id === op.id} onClick={() => patch((s) => { s.selected = { kind: "operator", id: op.id }; })}>
+          <div className="flex items-center justify-between gap-2">
+            <strong className="text-xs">{op.name}</strong>
+            <label className="text-[10px] text-muted">
+              <input type="checkbox" checked={op.enabled} onChange={(e) => patch((s) => { const x = s.operators.find((n) => n.id === op.id); if (x) x.enabled = e.target.checked; })} /> on
+            </label>
+            <Button size="sm" variant="danger" onClick={() => patch((s) => { s.operators = s.operators.filter((n) => n.id !== op.id); })}>×</Button>
+          </div>
+          <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+            <select value={op.type} onChange={(e) => patch((s) => { const x = s.operators.find((n) => n.id === op.id); if (x) x.type = e.target.value as MotionOpType; })} className="h-7 rounded-sm border border-line bg-bg px-1 text-xs">
+              {types.map((t) => <option key={t}>{t}</option>)}
+            </select>
+            <select value={op.sourceId} onChange={(e) => patch((s) => { const x = s.operators.find((n) => n.id === op.id); if (x) x.sourceId = e.target.value; })} className="h-7 rounded-sm border border-line bg-bg px-1 text-xs">
+              <option value="">objeto inteiro</option>
+              {doc.sources.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div className="mt-1.5 grid grid-cols-4 gap-1.5">
+            <MiniNum label="pressão" value={op.pressure} onChange={(v) => patch((s) => { const x = s.operators.find((n) => n.id === op.id); if (x) x.pressure = v; })} />
+            <MiniNum label="expansão" value={op.expansion} onChange={(v) => patch((s) => { const x = s.operators.find((n) => n.id === op.id); if (x) x.expansion = v; })} />
+            <MiniNum label="Δ temp" value={op.temperatureDelta} onChange={(v) => patch((s) => { const x = s.operators.find((n) => n.id === op.id); if (x) x.temperatureDelta = v; })} />
+            <MiniNum label="erosão" value={op.erosion} onChange={(v) => patch((s) => { const x = s.operators.find((n) => n.id === op.id); if (x) x.erosion = v; })} />
+            <MiniNum label="frag" value={op.fragmentation} onChange={(v) => patch((s) => { const x = s.operators.find((n) => n.id === op.id); if (x) x.fragmentation = v; })} />
+            <MiniNum label="partículas" value={op.particles} step={100} onChange={(v) => patch((s) => { const x = s.operators.find((n) => n.id === op.id); if (x) x.particles = v; })} />
+            <MiniNum label="início" value={op.start} onChange={(v) => patch((s) => { const x = s.operators.find((n) => n.id === op.id); if (x) x.start = v; })} />
+            <MiniNum label="duração" value={op.length} onChange={(v) => patch((s) => { const x = s.operators.find((n) => n.id === op.id); if (x) x.length = v; })} />
+          </div>
+        </FieldCard>
+      ))}
+    </div>
+  );
+}
+
+function Inspector() {
+  const doc = useSolum((s) => s.doc);
+  const sel = doc.selected;
+  if (sel.kind === "layer") {
+    const info = layerInfluence(doc, sel.id);
+    if (!info) return <p className="text-[11px] text-muted">Camada não encontrada.</p>;
+    const twice = whatIfLayer(doc, sel.id, { absorption: info.layer.absorption * 2 });
+    const half = whatIfLayer(doc, sel.id, { absorption: info.layer.absorption * 0.5 });
+    return (
+      <div className="rounded-md border border-line bg-panel-2 p-2 text-xs">
+        <div className="mb-1 font-display text-sm text-accent">{info.layer.name}</div>
+        <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 font-mono text-[11px]">
+          <dt className="text-muted">Papel</dt><dd>{LAYER_ROLE_LABELS[info.layer.role]}</dd>
+          <dt className="text-muted">Forma</dt><dd>{SHAPES[info.layer.shape]}</dd>
+          <dt className="text-muted">Raio</dt><dd>{info.layer.radius.toFixed(3)}</dd>
+          <dt className="text-muted">Espessura</dt><dd>{info.layer.thickness.toFixed(3)}</dd>
+          <dt className="text-muted">Densidade</dt><dd>{info.step.rho.toFixed(2)}</dd>
+          <dt className="text-muted">Absorção</dt><dd>{info.step.absorb.toFixed(2)}</dd>
+          <dt className="text-muted">Scatter</dt><dd>{info.step.scatter.toFixed(2)}</dd>
+          <dt className="text-muted">τ</dt><dd>{info.step.tau.toFixed(2)}</dd>
+          <dt className="text-muted">Passa</dt><dd>{(info.step.pass * 100).toFixed(1)}%</dd>
+          <dt className="text-muted">Acumulado</dt><dd>{(info.step.cum * 100).toFixed(1)}%</dd>
+          <dt className="text-muted">Emissão própria</dt><dd>{info.layer.emission.toFixed(2)}</dd>
+        </dl>
+        {twice && half ? (
+          <p className="mt-2 text-[11px] text-muted">
+            Se absorção ×2, T saída {(twice.next * 100).toFixed(0)}% ({twice.delta >= 0 ? "+" : ""}{(twice.delta * 100).toFixed(0)} pp).
+            Se ÷2, {(half.next * 100).toFixed(0)}%.
+          </p>
+        ) : null}
+        <div className="mt-2 text-[11px] text-muted">Influência das fontes nesta camada</div>
+        {info.influences.map((x) => (
+          <div key={x.name} className="flex justify-between font-mono text-[11px]">
+            <span>{x.name} <span className="text-muted">({x.kind})</span></span>
+            <span>{x.contribution.toFixed(2)}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  if (sel.kind === "source") {
+    const info = sourceThroughLayers(doc, sel.id);
+    if (!info) return null;
+    return (
+      <div className="rounded-md border border-line bg-panel-2 p-2 text-xs">
+        <div className="mb-1 font-display text-sm text-accent">{info.source.name}</div>
+        <p className="text-[11px] text-muted">
+          Emissão na origem {info.power.toFixed(2)} → após as camadas {info.remaining.toFixed(2)} ({(info.remaining / Math.max(0.001, info.power) * 100).toFixed(0)}% chega à superfície).
+          Cor {info.source.color}. Cone {info.source.cone.toFixed(2)} {info.source.cone < 0.01 ? "(omni)" : "(direcional)"}.
+        </p>
+        {info.steps.map((st, i) => (
+          <div key={st.layer.id} className="flex justify-between font-mono text-[11px]">
+            <span>L{i + 1} {st.layer.name}</span>
+            <span>resta {(st.cum * 100).toFixed(0)}%</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-md border border-line bg-panel-2 p-2 text-[11px] text-muted">
+      <p className="mb-1.5">Clique numa camada, fonte, ou no preview para inspecionar o interior.</p>
+      {describeCause(doc).map((l) => (
+        <p key={l} className="mb-1">{l}</p>
+      ))}
+    </div>
+  );
+}

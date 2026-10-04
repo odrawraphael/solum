@@ -1,0 +1,100 @@
+import { LAYER_ROLE_LABELS } from "@/lib/solum/schema";
+import { derivedLight } from "@/lib/solum/simulate";
+import { useSolum } from "@/store/solum-store";
+
+export function OnionDiagram() {
+  const doc = useSolum((s) => s.doc);
+  const patch = useSolum((s) => s.patch);
+  const M = derivedLight(doc);
+  const sorted = [...doc.layers].sort((a, b) => b.radius - a.radius);
+  const maxR = Math.max(1, ...sorted.map((l) => l.radius + l.thickness * 0.3));
+  const size = 280;
+  const cx = size / 2;
+  const cy = size / 2;
+  const k = 108 / maxR;
+
+  return (
+    <svg viewBox={`0 0 ${size} ${size}`} className="w-full max-w-[320px]">
+      <circle cx={cx} cy={cy} r={108} fill="#0c0c0b" stroke="#302d27" />
+      {sorted.map((l) => {
+        const step = M.layers.find((x) => x.layer.id === l.id);
+        const remain = step?.cum ?? 1;
+        const sel = doc.selected.kind === "layer" && doc.selected.id === l.id;
+        const r = Math.max(8, l.radius * k);
+        const heat = 1 - remain;
+        return (
+          <circle
+            key={l.id}
+            cx={cx}
+            cy={cy}
+            r={r}
+            fill={l.tint ? l.tint + "33" : `rgba(217,107,67,${0.04 + heat * 0.18})`}
+            stroke={sel ? "#d96b43" : "rgba(236,231,222,0.28)"}
+            strokeWidth={sel ? 2.5 : 1}
+            className="cursor-pointer"
+            onClick={() => patch((s) => { s.selected = { kind: "layer", id: l.id }; })}
+          />
+        );
+      })}
+      {doc.sources.map((src) => {
+        const sel = doc.selected.kind === "source" && doc.selected.id === src.id;
+        return (
+          <circle
+            key={src.id}
+            cx={cx + src.x * k}
+            cy={cy - src.y * k}
+            r={Math.max(5, src.radius * k * 0.45)}
+            fill={src.color || doc.colors.core}
+            stroke={sel ? "#ece7de" : "transparent"}
+            strokeWidth={2}
+            className="cursor-pointer"
+            onClick={() => patch((s) => { s.selected = { kind: "source", id: src.id }; })}
+          />
+        );
+      })}
+      <text x={cx} y={size - 12} textAnchor="middle" fill="#9e978b" fontSize="10">
+        núcleo → camadas → superfície · T {(M.out * 100).toFixed(0)}%
+      </text>
+    </svg>
+  );
+}
+
+export function LightBars() {
+  const doc = useSolum((s) => s.doc);
+  const patch = useSolum((s) => s.patch);
+  const M = derivedLight(doc);
+  let incoming = 1;
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-2 text-[11px]">
+        <span className="w-28 shrink-0 text-muted">núcleo</span>
+        <div className="h-2 flex-1 overflow-hidden rounded-full bg-bg">
+          <div className="h-full rounded-full bg-accent" style={{ width: "100%" }} />
+        </div>
+        <span className="w-12 text-right font-mono tabular-nums">100%</span>
+      </div>
+      {M.layers.map((st) => {
+        const before = incoming;
+        incoming = st.cum;
+        const sel = doc.selected.kind === "layer" && doc.selected.id === st.layer.id;
+        return (
+          <button
+            key={st.layer.id}
+            className={`flex items-center gap-2 rounded-md px-1 py-0.5 text-left text-[11px] ${sel ? "bg-panel-3" : ""}`}
+            onClick={() => patch((s) => { s.selected = { kind: "layer", id: st.layer.id }; })}
+          >
+            <span className="w-28 shrink-0 truncate">
+              {st.layer.name}
+              <span className="text-muted"> · {LAYER_ROLE_LABELS[st.layer.role]}</span>
+            </span>
+            <div className="relative h-2 flex-1 overflow-hidden rounded-full bg-bg">
+              <div className="absolute inset-y-0 left-0 bg-line" style={{ width: `${before * 100}%` }} />
+              <div className="absolute inset-y-0 left-0 bg-accent" style={{ width: `${st.cum * 100}%` }} />
+            </div>
+            <span className="w-12 text-right font-mono tabular-nums">{(st.cum * 100).toFixed(0)}%</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}

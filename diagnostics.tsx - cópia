@@ -1,0 +1,329 @@
+import { useMemo, type ReactNode } from "react";
+import { FIELD_NAMES, SHAPES, type FieldName } from "@/lib/solum/schema";
+import { derivedLight, describeCause, fieldAtRadius } from "@/lib/solum/simulate";
+import { buildPython } from "@/lib/solum/python";
+import { useSolum, type DiagTab } from "@/store/solum-store";
+import { Button } from "@/components/ui/button";
+import { LightBars, OnionDiagram } from "./onion";
+
+export function Diagnostics() {
+  const tab = useSolum((s) => s.diagTab);
+  const setTab = useSolum((s) => s.setDiagTab);
+  const tabs: [DiagTab, string][] = [
+    ["light", "Luz"],
+    ["fields", "Campos"],
+    ["structure", "Estrutura"],
+    ["motion", "Motion"],
+    ["python", "Python Houdini"],
+  ];
+  return (
+    <div className="flex min-h-0 flex-col bg-panel">
+      <nav className="flex gap-1 border-b border-line px-2.5 pt-2">
+        {tabs.map(([k, l]) => (
+          <button
+            key={k}
+            className={`rounded-t-md border border-b-0 px-2.5 py-1.5 text-xs ${
+              tab === k ? "border-line bg-panel-3 text-fg" : "border-transparent text-muted hover:text-fg"
+            }`}
+            onClick={() => setTab(k)}
+          >
+            {l}
+          </button>
+        ))}
+      </nav>
+      <div className="solum-scroll min-h-[220px] flex-1 overflow-auto p-3">
+        {tab === "light" ? <LightPane /> : null}
+        {tab === "fields" ? <FieldsPane /> : null}
+        {tab === "structure" ? <StructurePane /> : null}
+        {tab === "motion" ? <MotionPane /> : null}
+        {tab === "python" ? <PythonPane /> : null}
+      </div>
+    </div>
+  );
+}
+
+function Card({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="rounded-lg border border-line bg-panel-2 p-2.5">
+      <h3 className="mb-2 font-display text-[15px] font-semibold text-accent">{title}</h3>
+      {children}
+    </div>
+  );
+}
+
+function LightPane() {
+  const doc = useSolum((s) => s.doc);
+  const loadPreset = useSolum((s) => s.loadPreset);
+  const M = derivedLight(doc);
+  const causes = describeCause(doc);
+  return (
+    <div>
+      <div className="grid gap-3 md:grid-cols-[1.1fr_0.9fr]">
+        <Card title="Diagnóstico de luz">
+          <div className="grid grid-cols-2 gap-1.5 md:grid-cols-4">
+            <Metric value={M.coreI.toFixed(2)} label="intensidade do núcleo" />
+            <Metric value={`${(M.out * 100).toFixed(1)}%`} label="transmissão acumulada" />
+            <Metric value={String(M.layers.length)} label="camadas atravessadas" />
+            <Metric value={String(Math.round(doc.light.raySteps))} label="passos de diagnóstico" />
+          </div>
+          <div className="mt-3">
+            <LightBars />
+          </div>
+          <ul className="mt-3 space-y-1 text-[11px] text-muted">
+            {causes.map((c) => (
+              <li key={c}>{c}</li>
+            ))}
+          </ul>
+          <p className="mt-2 text-[11px] text-muted">
+            Núcleo → camada interna → camada externa → superfície. Cada camada tem densidade, absorção e scattering próprios. A transmissão é multiplicativa. Emission não substitui density.
+          </p>
+        </Card>
+        <Card title="Corte estrutural">
+          <OnionDiagram />
+          <p className="mt-2 text-[11px] text-muted">
+            Clique num anel ou núcleo. Compare casca opaca vs película:
+          </p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <Button size="sm" onClick={() => loadPreset("Núcleo velado")}>Núcleo velado</Button>
+            <Button size="sm" onClick={() => loadPreset("Núcleo exposto")}>Núcleo exposto</Button>
+            <Button size="sm" onClick={() => loadPreset("Dois brilhos")}>Dois brilhos</Button>
+            <Button size="sm" onClick={() => loadPreset("Casca ígnea")}>Casca ígnea</Button>
+          </div>
+        </Card>
+      </div>
+      <div className="mt-3">
+        <Card title="Trajeto por camada">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[36rem] font-mono text-[11px]">
+              <thead>
+                <tr className="text-right text-muted">
+                  <th className="py-1.5 text-left font-medium">camada</th>
+                  <th className="font-medium">papel</th>
+                  <th className="font-medium">raio</th>
+                  <th className="font-medium">densidade</th>
+                  <th className="font-medium">absorção</th>
+                  <th className="font-medium">scatter</th>
+                  <th className="font-medium">τ</th>
+                  <th className="font-medium">passa</th>
+                  <th className="font-medium">acum.</th>
+                </tr>
+              </thead>
+              <tbody>
+                {M.layers.map((x, i) => (
+                  <tr key={x.layer.id} className="border-t border-line text-right">
+                    <td className="py-1.5 text-left">{i + 1} · {x.layer.name}</td>
+                    <td>{x.layer.role}</td>
+                    <td>{x.layer.radius.toFixed(2)}</td>
+                    <td>{x.rho.toFixed(2)}</td>
+                    <td>{x.absorb.toFixed(2)}</td>
+                    <td>{x.scatter.toFixed(2)}</td>
+                    <td>{x.tau.toFixed(2)}</td>
+                    <td>{(x.pass * 100).toFixed(1)}%</td>
+                    <td>{(x.cum * 100).toFixed(1)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function Metric({ value, label }: { value: string; label: string }) {
+  return (
+    <div className="rounded-md border border-line bg-bg p-1.5">
+      <b className="block font-mono text-base font-semibold tabular-nums">{value}</b>
+      <span className="text-[10px] text-muted">{label}</span>
+    </div>
+  );
+}
+
+function FieldsPane() {
+  const doc = useSolum((s) => s.doc);
+  const rows = useMemo(() => {
+    return Array.from({ length: 9 }, (_, i) => {
+      const r = i / 8;
+      const rec: Record<string, string> = { r: r.toFixed(2) };
+      for (const f of FIELD_NAMES) rec[f] = fieldAtRadius(doc, f as FieldName, r).toFixed(2);
+      return rec;
+    });
+  }, [doc]);
+  return (
+    <div className="grid gap-3 md:grid-cols-2">
+      <Card title="Campos presentes">
+        {FIELD_NAMES.map((f) => (
+          <div key={f} className="mb-1.5 rounded-md border border-line bg-bg p-2">
+            <strong className="font-mono text-xs">{f}</strong>
+            <div className="text-[11px] text-muted">Combinação explícita de objeto, camadas, fontes, modificadores e motion.</div>
+          </div>
+        ))}
+      </Card>
+      <Card title="Leitura radial">
+        <div className="overflow-x-auto">
+          <table className="w-full font-mono text-[11px]">
+            <thead>
+              <tr className="text-right text-muted">
+                <th className="text-left font-medium">raio</th>
+                {FIELD_NAMES.map((f) => <th key={f} className="font-medium">{f}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.r} className="border-t border-line text-right">
+                  <td className="py-1 text-left">{r.r}</td>
+                  {FIELD_NAMES.map((f) => <td key={f}>{r[f]}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <FieldChart />
+        <p className="mt-2 text-[11px] text-muted">Curva estrutural do estado, não um render Houdini.</p>
+      </Card>
+    </div>
+  );
+}
+
+function FieldChart() {
+  const doc = useSolum((s) => s.doc);
+  const W = 660;
+  const H = 180;
+  const colors = ["#d9a56b", "#ff7a45", "#f3c58a", "#6a9fd9", "#7bc0c9", "#c86b6b", "#8fc58f"];
+  const names = FIELD_NAMES.slice(0, 5);
+  const paths = names.map((f, j) => {
+    let d = "";
+    for (let i = 0; i <= 80; i++) {
+      const r = i / 80;
+      const raw = fieldAtRadius(doc, f as FieldName, r);
+      const v = Math.max(0, Math.min(1, raw / Math.max(1, f === "density" ? 40 : 8)));
+      const x = 35 + i * (W - 55) / 80;
+      const y = 20 + (1 - v) * (H - 45);
+      d += `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`;
+    }
+    return { d, f, color: colors[j]! };
+  });
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="mt-2 w-full rounded-md bg-bg">
+      <line x1="35" y1={H - 25} x2={W - 20} y2={H - 25} stroke="#ffffff16" />
+      <line x1="35" y1="20" x2="35" y2={H - 25} stroke="#ffffff16" />
+      {paths.map((p, j) => (
+        <g key={p.f}>
+          <path d={p.d} fill="none" stroke={p.color} strokeWidth="2" />
+          <text x={W - 8} y={20 + j * 16} textAnchor="end" fill={p.color} fontSize="10">{p.f}</text>
+        </g>
+      ))}
+      <text x="35" y={H - 8} fill="#8f887d" fontSize="10">núcleo →</text>
+      <text x={W - 20} y={H - 8} textAnchor="end" fill="#8f887d" fontSize="10">superfície</text>
+    </svg>
+  );
+}
+
+function StructurePane() {
+  const doc = useSolum((s) => s.doc);
+  return (
+    <div className="grid gap-3 md:grid-cols-2">
+      <Card title="Árvore estrutural">
+        <div className="font-mono text-[11px] leading-relaxed">
+          <div><b>OBJECT</b> <span className="text-muted">{SHAPES[doc.object.shape]}</span></div>
+          <div>├─ SURFACE <span className="text-muted">macro + micro + cavidades + filamentos + massas</span></div>
+          {doc.layers.map((l, i) => (
+            <div key={l.id}>│  ├─ L{i + 1} <span className="text-muted">r={l.radius.toFixed(2)} / t={l.thickness.toFixed(2)} / ρ={l.density.toFixed(2)} / T={l.transmission.toFixed(2)}</span></div>
+          ))}
+          <div>├─ SOURCES</div>
+          {doc.sources.map((x) => (
+            <div key={x.id}>│  ├─ {x.name} <span className="text-muted">{x.kind} ({x.x.toFixed(2)},{x.y.toFixed(2)},{x.z.toFixed(2)}) r={x.radius.toFixed(2)}</span></div>
+          ))}
+          <div>├─ MODIFIERS</div>
+          {doc.modifiers.map((m) => (
+            <div key={m.id}>│  ├─ {m.name} <span className="text-muted">{m.type} → {m.target} {m.enabled ? "on" : "off"}</span></div>
+          ))}
+          <div>├─ FIELDS <span className="text-muted">{FIELD_NAMES.join(" / ")}</span></div>
+          <div>└─ MOTION <span className="text-muted">{doc.operators.length} operadores sobre a estrutura</span></div>
+        </div>
+      </Card>
+      <Card title="Seleção">
+        <p>
+          <span className="rounded-full border border-line px-2 py-0.5 text-[11px] text-muted">{doc.selected.kind}</span>{" "}
+          <strong>
+            {doc.selected.kind === "layer"
+              ? doc.layers.find((l) => l.id === doc.selected.id)?.name ?? "—"
+              : doc.selected.kind === "source"
+                ? doc.sources.find((c) => c.id === doc.selected.id)?.name ?? "—"
+                : "Objeto raiz"}
+          </strong>
+        </p>
+        <p className="mt-2 text-[11px] text-muted">
+          O preview não é uma caixa-preta: ele expõe posição, raio, campos e o quanto da luz de cada fonte sobrevive a cada camada.
+        </p>
+      </Card>
+    </div>
+  );
+}
+
+function MotionPane() {
+  const doc = useSolum((s) => s.doc);
+  const time = useSolum((s) => s.time);
+  return (
+    <div className="grid gap-3 md:grid-cols-2">
+      <Card title="O motion opera sobre o que já existe">
+        <p className="text-[12px] text-muted">
+          Origem, pressão, direção, erosão e fragmentação só fazem sentido se o Solum conhece casca, cavidades, núcleos e campos. Não é “faça uma explosão bonita”.
+        </p>
+        <div className="mt-2 font-mono text-[11px]">
+          t = {time.toFixed(2)} s / {doc.motion.duration.toFixed(1)} s · {doc.motion.fps} fps · loop {doc.motion.loop ? "sim" : "não"}
+        </div>
+      </Card>
+      <Card title="Operadores ativos">
+        {doc.operators.length === 0 ? (
+          <p className="text-[11px] text-muted">Nenhum evento. Use “+ explosão” no painel Motion ou o comando <code>op add explosion</code>.</p>
+        ) : (
+          doc.operators.map((op) => (
+            <div key={op.id} className="mb-1.5 rounded-md border border-line bg-bg p-2 font-mono text-[11px]">
+              <div className="font-sans text-xs font-medium">{op.name} · {op.type} {op.enabled ? "" : "(off)"}</div>
+              origem {op.sourceId || "objeto"} · P {op.pressure.toFixed(1)} · exp {op.expansion.toFixed(1)} · erosão {op.erosion.toFixed(2)}
+            </div>
+          ))
+        )}
+      </Card>
+    </div>
+  );
+}
+
+function PythonPane() {
+  const doc = useSolum((s) => s.doc);
+  const py = useMemo(() => buildPython(doc), [doc]);
+  const setStatus = useSolum((s) => s.setStatus);
+  return (
+    <Card title="Python Houdini — pronto para teste manual">
+      <div className="mb-2 flex flex-wrap gap-1.5">
+        <Button
+          variant="default"
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(py);
+              setStatus("Python copiado.", "good");
+            } catch {
+              setStatus("Copie pela área de texto.", "warn");
+            }
+          }}
+        >
+          Copiar Python
+        </Button>
+        <Button
+          onClick={() => {
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(new Blob([py], { type: "text/x-python" }));
+            a.download = "solum4_houdini.py";
+            a.click();
+          }}
+        >
+          Baixar .py
+        </Button>
+      </div>
+      <textarea readOnly value={py} className="min-h-[360px] w-full rounded-md border border-line bg-bg p-2 font-mono text-[11px] leading-relaxed text-fg" />
+      <p className="mt-2 text-[11px] text-muted">O botão não executa Houdini. Gera o script com o estado atual e deixa o teste para você.</p>
+    </Card>
+  );
+}

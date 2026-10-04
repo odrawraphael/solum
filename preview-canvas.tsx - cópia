@@ -1,0 +1,297 @@
+import { useEffect, useRef } from "react";
+import { VIEW_LABELS, VIEW_MODES, type ViewMode, SHAPES } from "@/lib/solum/schema";
+import { derivedLight } from "@/lib/solum/simulate";
+import { useSolum } from "@/store/solum-store";
+import { Button } from "@/components/ui/button";
+import { pickVolume, renderVolume } from "./renderer";
+import { Pill } from "./controls";
+import { Pause, Play, RotateCcw } from "lucide-react";
+
+export function PreviewCanvas() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const doc = useSolum((s) => s.doc);
+  const yaw = useSolum((s) => s.yaw);
+  const pitch = useSolum((s) => s.pitch);
+  const zoom = useSolum((s) => s.zoom);
+  const time = useSolum((s) => s.time);
+  const playing = useSolum((s) => s.playing);
+  const quality = useSolum((s) => s.quality);
+  const probe = useSolum((s) => s.probe);
+  const setView = useSolum((s) => s.setView);
+  const setQuality = useSolum((s) => s.setQuality);
+  const setPlaying = useSolum((s) => s.setPlaying);
+  const setTime = useSolum((s) => s.setTime);
+  const patch = useSolum((s) => s.patch);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const wrap = wrapRef.current;
+    if (!canvas || !wrap) return;
+    const ctx = canvas.getContext("2d", { alpha: false });
+    if (!ctx) return;
+    const rect = wrap.getBoundingClientRect();
+    const dpr = Math.min(1.25, window.devicePixelRatio || 1);
+    const W = Math.max(4, Math.floor(rect.width * dpr));
+    const H = Math.max(4, Math.floor(rect.height * dpr));
+    if (canvas.width !== W || canvas.height !== H) {
+      canvas.width = W;
+      canvas.height = H;
+    }
+    renderVolume(ctx, W, H, doc, { yaw, pitch, zoom, time }, quality);
+  }, [doc, yaw, pitch, zoom, time, quality]);
+
+  useEffect(() => {
+    if (!playing) return;
+    let raf = 0;
+    let last = performance.now();
+    const loop = (now: number) => {
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      const dur = Math.max(0.2, useSolum.getState().doc.motion.duration);
+      const loopOn = useSolum.getState().doc.motion.loop > 0.5;
+      let t = useSolum.getState().time + dt;
+      if (t > dur) t = loopOn ? t % dur : dur;
+      if (!loopOn && t >= dur) useSolum.getState().setPlaying(false);
+      setTime(t);
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [playing, setTime]);
+
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const ro = new ResizeObserver(() => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d", { alpha: false });
+      if (!ctx) return;
+      const rect = wrap.getBoundingClientRect();
+      const dpr = Math.min(1.25, window.devicePixelRatio || 1);
+      canvas.width = Math.max(4, Math.floor(rect.width * dpr));
+      canvas.height = Math.max(4, Math.floor(rect.height * dpr));
+      const s = useSolum.getState();
+      renderVolume(
+        ctx,
+        canvas.width,
+        canvas.height,
+        s.doc,
+        { yaw: s.yaw, pitch: s.pitch, zoom: s.zoom, time: s.time },
+        s.quality,
+      );
+    });
+    ro.observe(wrap);
+    return () => ro.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const s = useSolum.getState();
+      s.setView(
+        undefined,
+        undefined,
+        Math.max(0.55, Math.min(2.2, s.zoom * (e.deltaY < 0 ? 1.08 : 0.92))),
+      );
+    };
+    canvas.addEventListener("wheel", onWheel, { passive: false });
+    return () => canvas.removeEventListener("wheel", onWheel);
+  }, []);
+
+  const drag = useRef<{ x: number; y: number; moved: boolean } | null>(null);
+  const idleTimer = useRef<number>(0);
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    drag.current = { x: e.clientX, y: e.clientY, moved: false };
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    setQuality("drag");
+  };
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (!drag.current) return;
+    const dx = e.clientX - drag.current.x;
+    const dy = e.clientY - drag.current.y;
+    if (Math.hypot(dx, dy) > 3) drag.current.moved = true;
+    drag.current.x = e.clientX;
+    drag.current.y = e.clientY;
+    if (!drag.current.moved) return;
+    const s = useSolum.getState();
+    s.setView(s.yaw + dx * 0.008, Math.max(-1.45, Math.min(1.45, s.pitch + dy * 0.008)));
+  };
+  const onPointerLeave = () => {
+    drag.current = null;
+    setQuality("preview");
+    window.clearTimeout(idleTimer.current);
+    idleTimer.current = window.setTimeout(() => setQuality("idle"), 280);
+  };
+  const onPointerUp = (e: React.PointerEvent) => {
+    const wasDrag = drag.current?.moved;
+    drag.current = null;
+    try {
+      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {
+      /* already released */
+    }
+    setQuality("preview");
+    window.clearTimeout(idleTimer.current);
+    idleTimer.current = window.setTimeout(() => setQuality("idle"), 280);
+    if (wasDrag) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const s = useSolum.getState();
+    const hit = pickVolume(
+      e.clientX - rect.left,
+      e.clientY - rect.top,
+      rect.width,
+      rect.height,
+      s.doc,
+      { yaw: s.yaw, pitch: s.pitch, zoom: s.zoom, time: s.time },
+    );
+    if (!hit) {
+      s.setProbe(null);
+      return;
+    }
+    s.setProbe(hit);
+    if (hit.sourceId) {
+      s.select({ kind: "source", id: hit.sourceId });
+      s.setStatus("Sonda: fonte");
+    } else if (hit.layerId) {
+      s.select({ kind: "layer", id: hit.layerId });
+      s.setStatus("Sonda: camada");
+    }
+  };
+
+  const light = derivedLight(doc);
+  const layerName = probe?.layerId ? doc.layers.find((l) => l.id === probe.layerId)?.name : null;
+  const sourceName = probe?.sourceId ? doc.sources.find((c) => c.id === probe.sourceId)?.name : null;
+
+  return (
+    <section className="relative min-h-0 min-w-0 overflow-hidden border-b border-line bg-bg">
+      <div className="z-10 flex flex-col gap-1.5 border-b border-line bg-panel p-2">
+        <div className="flex gap-1 overflow-x-auto solum-scroll pb-0.5">
+          {VIEW_MODES.map((m) => (
+            <Button
+              key={m}
+              size="sm"
+              variant={doc.view.mode === m ? "default" : "secondary"}
+              onClick={() =>
+                patch((s) => {
+                  s.view.mode = m as ViewMode;
+                }, "View: " + VIEW_LABELS[m])
+              }
+            >
+              {VIEW_LABELS[m]}
+            </Button>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-1">
+          {doc.view.mode === "slice"
+            ? (["X", "Y", "Z"] as const).map((a) => (
+                <Button
+                  key={a}
+                  size="sm"
+                  variant={doc.view.sliceAxis === a ? "default" : "secondary"}
+                  onClick={() =>
+                    patch((s) => {
+                      s.view.sliceAxis = a;
+                    })
+                  }
+                >
+                  Slice {a}
+                </Button>
+              ))
+            : null}
+          {(
+            [
+              ["3D", -0.55, 0.42],
+              ["Frente", 0, 0],
+              ["Lado", Math.PI / 2, 0],
+              ["Topo", 0, Math.PI / 2],
+            ] as const
+          ).map(([n, y, p]) => (
+            <Button key={n} size="sm" onClick={() => setView(y, p)}>
+              {n}
+            </Button>
+          ))}
+          {doc.view.mode === "cutaway"
+            ? (["cam", "X", "Y", "Z"] as const).map((a) => (
+                <Button
+                  key={"cut-" + a}
+                  size="sm"
+                  variant={doc.view.cutAxis === a ? "default" : "secondary"}
+                  onClick={() =>
+                    patch((s) => {
+                      s.view.cutAxis = a;
+                    }, "Eixo do corte: " + a)
+                  }
+                >
+                  Corte {a === "cam" ? "câmera" : a}
+                </Button>
+              ))
+            : null}
+          <Button size="sm" onClick={() => setView(undefined, undefined, 1)}>
+            Enquadrar
+          </Button>
+          <Button
+            size="sm"
+            variant={playing ? "default" : "secondary"}
+            onClick={() => setPlaying(!playing)}
+            aria-label={playing ? "Pausar motion" : "Reproduzir motion"}
+          >
+            {playing ? <Pause /> : <Play />}
+            Motion
+          </Button>
+          <Button
+            size="icon"
+            onClick={() => {
+              setTime(0);
+              setPlaying(false);
+            }}
+            aria-label="Zerar tempo"
+          >
+            <RotateCcw />
+          </Button>
+        </div>
+      </div>
+
+      <div
+        ref={wrapRef}
+        className="h-[min(48vh,520px)] min-h-[280px] w-full min-w-0 touch-none max-md:h-[320px]"
+      >
+        <canvas
+          ref={canvasRef}
+          className="block h-full w-full cursor-grab active:cursor-grabbing"
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerLeave}
+          onPointerLeave={onPointerLeave}
+        />
+      </div>
+
+      <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex max-w-[min(92%,36rem)] flex-wrap gap-1.5">
+        <Pill>{SHAPES[doc.object.shape]}</Pill>
+        <Pill>{doc.layers.length} camadas</Pill>
+        <Pill>{doc.sources.length} fontes</Pill>
+        <Pill>density {doc.volume.density.toFixed(1)}</Pill>
+        <Pill>T saída {(light.out * 100).toFixed(0)}%</Pill>
+        <Pill>
+          t {time.toFixed(2)}s / {doc.motion.duration.toFixed(1)}s
+        </Pill>
+        {probe ? (
+          <Pill>
+            sonda ρ {probe.sample.density.toFixed(1)} · T {probe.sample.temperature.toFixed(1)} · E {probe.sample.emission.toFixed(2)}
+            {layerName ? ` · ${layerName}` : ""}
+            {sourceName ? ` · ${sourceName}` : ""}
+          </Pill>
+        ) : (
+          <Pill>clique para sondar o interior</Pill>
+        )}
+      </div>
+    </section>
+  );
+}
